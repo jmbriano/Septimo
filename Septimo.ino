@@ -1,61 +1,26 @@
-
-#include <Arduino.h>
 #include <U8g2lib.h>
-#include <SPI.h>
-#include <Wire.h>
 #include <WiFi101.h>
+#include "SeptimoPrism.h"
 
 #include "config/arduino_secrets.h"
 
 U8G2_SSD1306_128X32_UNIVISION_F_HW_I2C u8g2(U8G2_R0); 
+SeptimoPrism device;
 
+int BOOT_INITIAL_BLINK_SECS = 5;
 // PIN numbers
-
-// Tasks IDs
-
-int NO_TASK = 0; // No task
-int TASK_1 = 1;
-int TASK_2 = 2;
-int TASK_3 = 3;
-int TASK_4 = 4;
-int TASK_5 = 5;
-int TASK_6 = 6;
-
-
-// LEDs used to indicate the current task
-int LED_NO_TASK = 0;
-int LED_TASK_1 = 1;
-int LED_TASK_2 = 2;
-int LED_TASK_3 = 3;
-int LED_TASK_4 = 4;
-int LED_TASK_5 = 5;
-int LED_TASK_6 = 6;
-
-// Sensors to indentify the side facing down
-int SENSOR_NO_TASK = A0;
-int SENSOR_TASK_1 = A1;
-int SENSOR_TASK_2 = A2;
-int SENSOR_TASK_3 = A3;
-int SENSOR_TASK_4 = A4;
-int SENSOR_TASK_5 = A5;
-int SENSOR_TASK_6 = A6;
-
 
 int allProjectIDs[] = {10,20,30,40,50,60 };
 String allProjects[] = {"RECAPP", "REX","GTP", "QUOTA", "VSKO", "KANS" };
 int allProjectsLenght = 6;
 
 // Each side of Septimo is associated with a project and a task
-int projects[7];
-String tasks[7];
-
-boolean justBooted;
+//int projects[7]; //TODO: check why if removed it hangs
+//String tasks[7]; //TODO: check why if removed it hangs
 
 // The currently active task is kept in this variable. NO_TASK = no timer running
-int currentTask = NO_TASK;
+int currentTask = device.NO_TASK;
 
-// When a new side is facing up, it will wait the following number of second before triggering the task change
-int TRANSITION_CONFIRMATION_SECS = 5;
 
 // WiFi Configuration
 char ssid[] = SECRET_SSID;  
@@ -81,58 +46,14 @@ void writeLineInDisplay(int line, const char * text) {
    u8g2.sendBuffer();
 }
 
-// Sensors and Leds Functions
-void setSide(int side, int projectId, String task) {
-  Serial.println ("Setting side: "+String(side)+" to Project: " + projectId + " and Task: "+ task);
-  projects[side] = projectId;
-  tasks[side] = task;
-}
-
-String getSideTask(int side){
-  return tasks[side];
-}
-
-int getSideProject(int side){
-  return projects[side];
-}
-
-void turnOffLedForTask(int taskID){
-  digitalWrite(getLedForTaskID(taskID),LOW);
-  
-}
-
-void turnOnLedForTask(int taskID){
-  digitalWrite(getLedForTaskID(taskID),HIGH);
-  
-}
-
-void turnAllLedsOn(){
-  turnOnLedForTask(NO_TASK);
-  turnOnLedForTask(TASK_1);
-  turnOnLedForTask(TASK_2);
-  turnOnLedForTask(TASK_3);
-  turnOnLedForTask(TASK_4);
-  turnOnLedForTask(TASK_5);
-  turnOnLedForTask(TASK_6);
-}
-
-void turnAllLedsOff(){
-  turnOffLedForTask(NO_TASK);
-  turnOffLedForTask(TASK_1);
-  turnOffLedForTask(TASK_2);
-  turnOffLedForTask(TASK_3);
-  turnOffLedForTask(TASK_4);
-  turnOffLedForTask(TASK_5);
-  turnOffLedForTask(TASK_6);
-}
-
 void executeTransitionTo(int newTaskID){
-  turnOffLedForTask(currentTask);
+  device.turnOffLedForTask(currentTask);
   stopTimmerForTask(currentTask);
-  turnOnLedForTask(newTaskID);
+  device.turnOnLedForTask(newTaskID);
   startTimmerForTask(newTaskID);
   currentTask = newTaskID;
 }
+
 
 
 // Time tracking functions
@@ -145,79 +66,10 @@ void stopTimmerForTask(int taskID){
 }
 
 
-// This function reads all sensors to find the darkest one (smaller input) and return the task associated to that sensor. Returns values between 1 and 7
-int getUpFacingTask(){
-  int minSensor = SENSOR_NO_TASK;
-  int minTaskID = NO_TASK;
-  if (analogRead(SENSOR_TASK_1) < analogRead(minSensor)) { minSensor = SENSOR_TASK_1; minTaskID = TASK_1; }
-  if (analogRead(SENSOR_TASK_2) < analogRead(minSensor)) { minSensor = SENSOR_TASK_2; minTaskID = TASK_2; }
-  if (analogRead(SENSOR_TASK_3) < analogRead(minSensor)) { minSensor = SENSOR_TASK_3; minTaskID = TASK_3; }
-  if (analogRead(SENSOR_TASK_4) < analogRead(minSensor)) { minSensor = SENSOR_TASK_4; minTaskID = TASK_4; }
-  if (analogRead(SENSOR_TASK_5) < analogRead(minSensor)) { minSensor = SENSOR_TASK_5; minTaskID = TASK_5; }
-  if (analogRead(SENSOR_TASK_6) < analogRead(minSensor)) { minSensor = SENSOR_TASK_6; minTaskID = TASK_6; }
 
-  return minTaskID;
-  
-}
 
-// Call this function when a new side has become the upfacing one
-void processChangeInUpfacingSide(){
 
-  int newUpfacing = getUpFacingTask();
-  if (newUpfacing != currentTask) {
-    bool executeTransition = false;
-    // wait TRANSITION_CONFIRMATION_SECS seconds blinking
-    for (int i = 1; i <= TRANSITION_CONFIRMATION_SECS; i++){
 
-      // If we are back to the current side up, then we skip the counting (Except we just booted)
-      if (newUpfacing == currentTask && !justBooted) {
-        break;
-      }
-      
-      turnOnLedForTask(newUpfacing);
-      delay(500);
-      
-      turnOffLedForTask(newUpfacing);
-      delay(500);
-
-      if(getUpFacingTask() != newUpfacing){
-        // there was a new change of the upfacing task. Stop the blinking and restart the counting for the new upfacing task
-        turnOffLedForTask(newUpfacing); // turn of the previous blinking. It should be off anyway, but just in case.
-        newUpfacing = getUpFacingTask();
-        i = 1;
-      }
-
-      if (i == TRANSITION_CONFIRMATION_SECS){
-        executeTransition = true;
-      }
-    }
-
-    if (executeTransition){
-      executeTransitionTo(newUpfacing);
-      justBooted = false;
-    }  
-  }
-}
-
-int getLedForTaskID(int task){
-  if (TASK_1 == task) return LED_TASK_1;
-  if (TASK_2 == task) return LED_TASK_2;
-  if (TASK_3 == task) return LED_TASK_3;
-  if (TASK_4 == task) return LED_TASK_4;
-  if (TASK_5 == task) return LED_TASK_5;
-  if (TASK_6 == task) return LED_TASK_6;
-  if (NO_TASK == task) return LED_NO_TASK;
-}
-
-int getSensorForTaskID(int task){
-  if (TASK_1 == task) return SENSOR_TASK_1;
-  if (TASK_2 == task) return SENSOR_TASK_2;
-  if (TASK_3 == task) return SENSOR_TASK_3;
-  if (TASK_4 == task) return SENSOR_TASK_4;
-  if (TASK_5 == task) return SENSOR_TASK_5;
-  if (TASK_6 == task) return SENSOR_TASK_6;
-  if (NO_TASK == task) return SENSOR_NO_TASK;
-}
 
 // Wifi Functions
 
@@ -260,6 +112,10 @@ char* ip2CharArray(IPAddress ip) {
 }
 
 String buildConfigurationFormTask(int side){
+  Serial.println("buildConfigurationFormTask");
+  Serial.println("device.getSideTask(side):" + device.getSideTask(side));
+  Serial.println("device.getSideProject(side):" + String(device.getSideProject(side)));
+  
   String formGroup = "";
   //formGroup.concat("<div class=\"form-group\">");
   formGroup.concat("  <label>Side "+String(side)+"</label>");
@@ -269,7 +125,7 @@ String buildConfigurationFormTask(int side){
   
   for (int i = 0; i< allProjectsLenght; i++) {
     String selected = "";
-    if (getSideProject(side) == allProjectIDs[i]) selected=" selected ";
+    if (device.getSideProject(side) == allProjectIDs[i]) selected=" selected ";
     formGroup.concat("          <option "+selected+"value=\""+String(allProjectIDs[i])+"\">"+String(allProjects[i])+"</option>");  
   }
   
@@ -279,7 +135,7 @@ String buildConfigurationFormTask(int side){
   formGroup.concat("      <div class=\"input-group-prepend\">");
   formGroup.concat("            <span class=\"input-group-text\" id=\"basic-addon3\">Description</span>");
   formGroup.concat("        </div>");
-  formGroup.concat("        <input type=\"text\" class=\"form-control\" id=\"task"+String(side)+"\" name=\"task"+String(side)+"\" aria-describedby=\"basic-addon3\" value=\""+getSideTask(side)+"\" required>");
+  formGroup.concat("        <input type=\"text\" class=\"form-control\" id=\"task"+String(side)+"\" name=\"task"+String(side)+"\" aria-describedby=\"basic-addon3\" value=\""+device.getSideTask(side)+"\" required>");
   formGroup.concat("      </div>");
   formGroup.concat("  </div>");
   //formGroup.concat("</div>");
@@ -287,6 +143,7 @@ String buildConfigurationFormTask(int side){
 }
 
 void responseWithEmptyOK(WiFiClient client) {
+  Serial.println("responseWithEmptyOK");
   client.println("HTTP/1.1 200 OK");
   client.println("Content-Type: text/html");
   client.println("Connection: close");  // the connection will be closed after completion of the response
@@ -297,6 +154,7 @@ void responseWithEmptyOK(WiFiClient client) {
   
 }
 void responseWithSaveConfirmation(WiFiClient client) {
+  Serial.println("responseWithSaveConfirmation");
   // send a standard http response header
   client.println("HTTP/1.1 200 OK");
   client.println("Content-Type: text/html");
@@ -317,6 +175,7 @@ void responseWithSaveConfirmation(WiFiClient client) {
   
 }
 void responseWithConfigurationScreen(WiFiClient client) {
+  Serial.println("responseWithConfigurationScreen");
   // send a standard http response header
   client.println("HTTP/1.1 200 OK");
   client.println("Content-Type: text/html");
@@ -330,10 +189,10 @@ void responseWithConfigurationScreen(WiFiClient client) {
   client.println("  </head>");
   
   client.println("  <body>");
-  client.println("    <div id=\"currentTask\">Current Project: " + String(projects[currentTask]) + " Current Task: "+ String(tasks[currentTask]) + "</div>");
+  client.println("    <div id=\"currentTask\">Current Project: " + String(device.getSideProject(currentTask)) + " Current Task: "+ device.getSideTask(currentTask) + "</div>");
   client.println("      <form name=\"tasksForm\" id=\"tasksForm\" method=\"post\" action=\"/config\">");
 
-  for (int side = TASK_1; side <= TASK_6; side++) {
+  for (int side = device.TASK_1; side <= device.TASK_6; side++) {
     client.println(buildConfigurationFormTask(side));
   }
   
@@ -346,6 +205,7 @@ void responseWithConfigurationScreen(WiFiClient client) {
 
 
 String extractPOSTfromRequest(String request, WiFiClient client) {
+    Serial.println("extractPOSTfromRequest");
     String post = "";
     char c;
     String temp = request.substring(request.indexOf("Content-Length:") + 15);
@@ -360,12 +220,13 @@ String extractPOSTfromRequest(String request, WiFiClient client) {
 }
 
 void setSidesForInput(String input){
-    setSide(NO_TASK,0,"NO_TASK"); 
+    Serial.println("setSidesForInput");
+    device.configureSide(device.NO_TASK,0,"NO_TASK"); 
     int taskStart = 0;
     int taskEnd = 0;
     int projectStart = 0;
     int projectEnd = 0;
-    for (int side = TASK_1; side <= TASK_6; side++) {
+    for (int side = device.TASK_1; side <= device.TASK_6; side++) {
        projectStart = input.indexOf("project"+String(side))+9;
        projectEnd = input.indexOf("&", projectStart);
        taskStart = input.indexOf("task"+String(side))+6;
@@ -373,14 +234,16 @@ void setSidesForInput(String input){
        String project = input.substring(projectStart,projectEnd);
        String task = input.substring(taskStart,taskEnd);
        task.replace('+',' ');
-       setSide(side,project.toInt(),task);
+       device.configureSide(side,project.toInt(),task);
     }
   
 }
 
 void processIncomingServerRequest() {
+  
   WiFiClient client = server.available();
   if (client) {
+    //Serial.println("client");
     int timeoutControl = 5000;
     String request = "";
     // an http request ends with a blank line
@@ -448,36 +311,22 @@ void setup() {
 
   writeBigInDisplay("Septimo");
 
-  justBooted = true;
-
-  // Set PIN modes. 
-  pinMode(LED_TASK_1,OUTPUT);
-  pinMode(LED_TASK_2,OUTPUT);
-  pinMode(LED_TASK_3,OUTPUT);
-  pinMode(LED_TASK_4,OUTPUT);
-  pinMode(LED_TASK_5,OUTPUT);
-  pinMode(LED_TASK_6,OUTPUT);
-  pinMode(LED_NO_TASK,OUTPUT);
-  pinMode(SENSOR_TASK_1, INPUT);
-  pinMode(SENSOR_TASK_2, INPUT);
-  pinMode(SENSOR_TASK_3, INPUT);
-  pinMode(SENSOR_TASK_4, INPUT);
-  pinMode(SENSOR_TASK_5, INPUT);
-  pinMode(SENSOR_NO_TASK, INPUT);
+  device.begin();
+  
   Serial.begin(9600);
 
-  setSide(NO_TASK,0,"");
-  setSide(TASK_1,10,"Task 1");
-  setSide(TASK_2,20,"Task 2");
-  setSide(TASK_3,30,"Task 3");
-  setSide(TASK_4,40,"Task 4");
-  setSide(TASK_5,50,"Task 5");
-  setSide(TASK_6,60,"Task 6");
+  device.configureSide(device.NO_TASK,0,"");
+  device.configureSide(device.TASK_1,10,"Task 1");
+  device.configureSide(device.TASK_2,20,"Task 2");
+  device.configureSide(device.TASK_3,30,"Task 3");
+  device.configureSide(device.TASK_4,40,"Task 4");
+  device.configureSide(device.TASK_5,50,"Task 5");
+  device.configureSide(device.TASK_6,60,"Task 6");
 
-  for (int i = 1; i <= TRANSITION_CONFIRMATION_SECS * 5; i++){
-    turnAllLedsOn();
+  for (int i = 1; i <= BOOT_INITIAL_BLINK_SECS * 5; i++){
+    device.turnAllLedsOn();
     delay(100);
-    turnAllLedsOff();
+    device.turnAllLedsOff();
     delay(100);
   }
 
@@ -486,7 +335,7 @@ void setup() {
 
   server.begin(); // TODO
 
-  currentTask = getUpFacingTask(); // When turned on, the current position must be consider as no active counting.
+  currentTask = device.getUpFacingTask(); // When turned on, the current position must be consider as no active counting.
 }
 
 void loop() {
@@ -495,7 +344,11 @@ void loop() {
   checkOrConnectWifi();
   
   // Check if there was any upfacing side change. This function will exit with no action if the same side is facing up
-  processChangeInUpfacingSide();
+  int newTaskUp = device.getUpfacingTaskAfterTransition(currentTask);
+
+  if (newTaskUp != currentTask) {
+    executeTransitionTo(newTaskUp);
+  }
 
   processIncomingServerRequest();
   
