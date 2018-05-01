@@ -28,7 +28,6 @@ class SeptimoPrism {
     static const int TASK_4 = 4;
     static const int TASK_5 = 5;
     static const int TASK_6 = 6;
-    
 
     SeptimoPrism();
     void begin();

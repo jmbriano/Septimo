@@ -25,6 +25,11 @@ int LED_TASK_5 = 5;
 int LED_TASK_6 = 6;
 
 
+SeptimoPrism::SeptimoPrism(){
+
+};
+
+
 void SeptimoPrism::begin(){
   // Set PIN modes. 
   pinMode(LED_TASK_1,OUTPUT);
@@ -143,8 +148,6 @@ int SeptimoPrism::getUpfacingTaskAfterTransition(int currentTask){
       if (newUpfacing == currentTask && !justBooted) {
         break;
       }
-      Serial.println("new: " + String(newUpfacing));
-      Serial.println("current: " + String(currentTask));
       turnOnLedForTask(newUpfacing);
       delay(500);
       
