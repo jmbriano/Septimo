@@ -30,8 +30,8 @@ class ConfigurationServer {
 
   private:
 
-    int allProjectIDs[40];
-    String allProjectsNames[40];
+    int allProjectIDs[50];
+    String allProjectsNames[50];
     int allProjectsLength;
   
     String buildConfigurationFormTask(int side, SeptimoPrism &device);

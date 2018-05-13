@@ -1,30 +1,37 @@
 #include <U8g2lib.h>
 #include <WiFi101.h>
-#include "SeptimoPrism.h"
-#include "ConfigurationServer.h"
 
 
 #include "config/arduino_secrets.h"
+#include "SeptimoPrism.h"
+#include "ConfigurationServer.h"
+#include "ToggleConnector.h"
 
+
+// Components
+WiFiServer server(80);
+WiFiSSLClient client;
 U8G2_SSD1306_128X32_UNIVISION_F_HW_I2C u8g2(U8G2_R0); 
 SeptimoPrism device;
 ConfigurationServer configServer;
+ToggleConnector connector(client);
 
+// Configuration parameters
 int BOOT_INITIAL_BLINK_SECS = 5;
-// PIN numbers
-
-// The currently active task is kept in this variable. NO_TASK = no timer running
-int currentTask = device.NO_TASK;
-
 // WiFi Configuration
 char ssid[] = SECRET_SSID;  
 char pass[] = SECRET_PASS;  
 int status = WL_IDLE_STATUS;
 
-WiFiServer server(80);
+// The currently active task is kept in this variable. NO_TASK = no timer running
+int currentTask = device.NO_TASK;
 
-// FUNCTIONS
+// Information of all projects
+int all_project_size = 0;
+int all_project_ids[50];
+String all_project_names [50];
 
+// LCD functions. TODO: extract to a class
 // Display Functions
 void writeBigInDisplay(const char * text) {
    u8g2.clearBuffer();
@@ -39,27 +46,30 @@ void writeLineInDisplay(int line, const char * text) {
    u8g2.drawStr(5,10*line,text);
    u8g2.sendBuffer();
 }
+// END LCD functions. TODO: extract to a class
 
+/* This functions executes thetransition from one side to the other. This include changing the LEDs and pushing to toggle the new ongoing task
+*/
 void executeTransitionTo(int newTaskID){
+  Serial.println("Swritching from side " + String (currentTask) + " to side " + String(newTaskID));
   device.turnOffLedForTask(currentTask);
-  stopTimmerForTask(currentTask);
   device.turnOnLedForTask(newTaskID);
+  stopTimmerForTask(currentTask);
   startTimmerForTask(newTaskID);
   currentTask = newTaskID;
 }
 
 // Time tracking functions
-void startTimmerForTask(int taskID){
-  Serial.println("Working on "+ String(taskID));
+void startTimmerForTask(int side){
+  connector.startActivity(all_project_ids[side],"Heloo World");
 }
 
-void stopTimmerForTask(int taskID){
-  Serial.println("Stopped working on "+ String(taskID));
+void stopTimmerForTask(int side){
+  connector.stopActivity();
 }
 
 // Wifi Functions
 void checkOrConnectWifi() {
-  
   
   while ( status != WL_CONNECTED) {
     // attempt to connect to WiFi network:
@@ -71,17 +81,6 @@ void checkOrConnectWifi() {
     // Connect to WPA/WPA2 network:
     status = WiFi.begin(ssid, pass);
     
-    // wait 10 seconds for connection:
-    for (int i = 0; i<=3; i++) {
-        if ( status == WL_CONNECTED) break;
-        writeLineInDisplay(1,"IP: Connecting.");
-        delay(1000);
-        writeLineInDisplay(1,"IP: Connecting..");
-        delay(1000);
-        writeLineInDisplay(1,"IP: Connecting...");
-        delay(1000);
-    }
-
     // print your WiFi shield's IP address:
     IPAddress ip = WiFi.localIP();
     Serial.print("IP Address: ");
@@ -106,6 +105,8 @@ void setup() {
   
   Serial.begin(9600);
 
+
+  // TODO, remove this block
   device.configureSide(device.NO_TASK,0,"");
   device.configureSide(device.TASK_1,10,"Task 1");
   device.configureSide(device.TASK_2,20,"Task 2");
@@ -114,23 +115,24 @@ void setup() {
   device.configureSide(device.TASK_5,50,"Task 5");
   device.configureSide(device.TASK_6,60,"Task 6");
 
-  for (int i = 1; i <= BOOT_INITIAL_BLINK_SECS * 5; i++){
+  /*for (int i = 1; i <= BOOT_INITIAL_BLINK_SECS * 5; i++){
     device.turnAllLedsOn();
     delay(100);
     device.turnAllLedsOff();
     delay(100);
-  }
+  }*/
 
   // Connect to WiFi
   checkOrConnectWifi();
 
-  server.begin(); // TODO
+  server.begin(); 
 
   currentTask = device.getUpFacingTask(); // When turned on, the current position must be consider as no active counting.
 
-  int ids[] = {10,20,30,40,50,60};
-  String names [] = {"RECAPP", "REX","GTP", "QUOTA", "VSKO", "KANS" };
-  configServer.setAvailableProjects(ids, names, 6);
+  all_project_size = connector.getAvailableProject(all_project_ids,all_project_names);
+
+  configServer.setAvailableProjects(all_project_ids, all_project_names, all_project_size);
+
 }
 
 
@@ -151,5 +153,12 @@ void loop() {
   delay(500);
 
   //TODO: add button to switch Display to IP.
+  // display to show:
+  //   - IP
+  //   - config URL
+  //   - Current project and task (for those in Septimo and thos not)
+  //   - Total hours of current day
+
+  
   
 }
